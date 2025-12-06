@@ -3,11 +3,12 @@ import { AnalysisResult } from "../types";
 const API_BASE_URL = "http://127.0.0.1:8000";
 
 export const fetchAnalysisData = async (
-  keyword: string
+  keyword: string,
+  model: string
 ): Promise<AnalysisResult> => {
   try {
     const response = await fetch(
-      `${API_BASE_URL}/analyze?keyword=${encodeURIComponent(keyword)}`
+      `${API_BASE_URL}/analyze?keyword=${encodeURIComponent(keyword)}&model=${encodeURIComponent(model)}`
     );
 
     if (!response.ok) {

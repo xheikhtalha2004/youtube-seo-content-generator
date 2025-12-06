@@ -16,7 +16,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
 
-  const handleGenerate = useCallback(async (keywordToSearch: string) => {
+  const handleGenerate = useCallback(async (keywordToSearch: string, model: string) => {
     if (!keywordToSearch.trim()) {
       setError('Please enter a keyword.');
       return;
@@ -28,7 +28,7 @@ const App: React.FC = () => {
     window.scrollTo(0, 0);
 
     try {
-      const result = await fetchAnalysisData(keywordToSearch);
+      const result = await fetchAnalysisData(keywordToSearch, model);
       setAnalysisResult(result);
     } catch (err) {
       if (err instanceof Error) {
@@ -43,7 +43,7 @@ const App: React.FC = () => {
   
   const handleRelatedKeywordClick = useCallback((newKeyword: string) => {
     setKeyword(newKeyword);
-    handleGenerate(newKeyword);
+    handleGenerate(newKeyword, 'gemini-2.5-flash');
   }, [handleGenerate]);
 
   const hasResults = analysisResult;
@@ -66,7 +66,7 @@ const App: React.FC = () => {
           <KeywordInput
             keyword={keyword}
             setKeyword={setKeyword}
-            onGenerate={() => handleGenerate(keyword)}
+            onGenerate={(model) => handleGenerate(keyword, model)}
             isLoading={isLoading}
           />
         </div>

@@ -31,27 +31,15 @@ app.add_middleware(
 
 # --- AI Configuration ---
 # Make sure to set your API_KEY as an environment variable
-api_key = os.environ.get("GEMINI_API_KEY", "AIzaSyDXUF9WP3SpIduObNCEXJD4MQ44iSxbo4E")
+api_key = os.environ.get("GEMINI_API_KEY")
 if not api_key:
-    raise ValueError("API_KEY environment variable not set.")
+    raise ValueError("GEMINI_API_KEY environment variable not set.")
 
 genai.configure(api_key=api_key)
 
-# Try multiple model names in order of preference (based on testing)
-model_names = ['models/gemini-2.5-flash', 'gemini-2.5-flash', 'models/gemini-2.0-flash', 'gemini-2.0-flash']
-model = None
-
-for model_name in model_names:
-    try:
-        model = genai.GenerativeModel(model_name)
-        print(f"✅ Using model: {model_name}")
-        break
-    except Exception as e:
-        print(f"❌ Failed to load model {model_name}: {e}")
-        continue
-
-if model is None:
-    raise ValueError("Could not initialize any Gemini model. Please check your API key and model availability.")
+# Allowed Gemini models for dynamic selection
+ALLOWED_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+DEFAULT_MODEL = 'gemini-2.5-flash'
 
 # --- Web Scraping Logic ---
 async def scrape_youtube_videos(keyword: str):
@@ -199,7 +187,7 @@ def scrape_youtube_videos_sync(keyword: str):
                     return videos
                     
                 except Exception as e:
-                    print(f"Failed with browser {browser_type._name}: {e}")
+                    print(f"Failed with browser {browser_type.name}: {e}")
                     continue
             
             return [{
@@ -220,7 +208,21 @@ def scrape_youtube_videos_sync(keyword: str):
         }]
 
 # --- AI Analysis Logic ---
-async def get_seo_analysis(keyword: str):
+async def get_seo_analysis(keyword: str, model_name: str = DEFAULT_MODEL):
+    # Initialize model dynamically with error handling
+    model = None
+    try:
+        model = genai.GenerativeModel(model_name)
+    except Exception as e:
+        print(f"Failed to initialize model {model_name}: {e}")
+        # Fallback to default model
+        try:
+            model = genai.GenerativeModel(DEFAULT_MODEL)
+            print(f"Fell back to default model: {DEFAULT_MODEL}")
+        except Exception as fallback_e:
+            print(f"Failed to initialize default model {DEFAULT_MODEL}: {fallback_e}")
+            raise ValueError(f"Could not initialize any Gemini model. Please check your API key and model availability.")
+
     prompt = f"""
     Analyze the YouTube keyword "{keyword}" and provide a complete SEO analysis in JSON format.
     The JSON object must strictly follow this structure:
@@ -251,7 +253,7 @@ async def get_seo_analysis(keyword: str):
       "relatedKeywords": ["string"]
     }}
     """
-    
+
     response = await model.generate_content_async(
         prompt,
         generation_config=genai.GenerationConfig(response_mime_type="application/json")
@@ -276,34 +278,38 @@ def get_cached_result(keyword: str) -> dict | None:
 
 # --- Main API Endpoint ---
 @app.get("/analyze")
-async def analyze_keyword(keyword: str = Query(..., min_length=1)):
+async def analyze_keyword(keyword: str = Query(..., min_length=1), model: str = Query(DEFAULT_MODEL)):
     try:
+        # Validate model parameter
+        if model not in ALLOWED_MODELS:
+            model = DEFAULT_MODEL
+
         # Check cache first
         cached_result = get_cached_result(keyword.lower())
         if cached_result:
             return cached_result
-            
+
         # If not in cache, generate new results
         with ThreadPoolExecutor() as executor:
             loop = asyncio.get_event_loop()
             videos_future = loop.run_in_executor(executor, scrape_youtube_videos_sync, keyword)
-            
-            seo_json_str = await get_seo_analysis(keyword)
+
+            seo_json_str = await get_seo_analysis(keyword, model)
             videos = await videos_future
-            
+
             seo_data = json.loads(seo_json_str)
-            
+
             # Create result
             result = {
                 "seoData": seo_data,
                 "videoData": videos
             }
-            
+
             # Store in cache
             keyword_cache[keyword.lower()] = (result, datetime.now())
-            
+
             return result
-            
+
     except Exception as e:
         print(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail=str(e))

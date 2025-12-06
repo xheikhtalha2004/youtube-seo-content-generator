@@ -1,17 +1,19 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 
 interface KeywordInputProps {
   keyword: string;
   setKeyword: (keyword: string) => void;
-  onGenerate: () => void;
+  onGenerate: (model: string) => void;
   isLoading: boolean;
 }
 
 const KeywordInput: React.FC<KeywordInputProps> = ({ keyword, setKeyword, onGenerate, isLoading }) => {
+  const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash');
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
-      onGenerate();
+      onGenerate(selectedModel);
     }
   };
 
@@ -26,8 +28,18 @@ const KeywordInput: React.FC<KeywordInputProps> = ({ keyword, setKeyword, onGene
         className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-md focus:ring-2 focus:ring-red-500 focus:outline-none transition-shadow duration-200"
         disabled={isLoading}
       />
+      <select
+        value={selectedModel}
+        onChange={(e) => setSelectedModel(e.target.value)}
+        className="px-4 py-3 bg-slate-800 border border-slate-600 rounded-md focus:ring-2 focus:ring-red-500 focus:outline-none transition-shadow duration-200"
+        disabled={isLoading}
+      >
+        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+      </select>
       <button
-        onClick={onGenerate}
+        onClick={() => onGenerate(selectedModel)}
         disabled={isLoading || !keyword.trim()}
         className="w-full sm:w-auto px-6 py-3 bg-red-600 text-white font-semibold rounded-md hover:bg-red-700 disabled:bg-red-900 disabled:cursor-not-allowed transition-colors duration-200 flex items-center justify-center gap-2"
       >
