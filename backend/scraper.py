@@ -1,16 +1,20 @@
 import os
+import re
+import json
 import asyncio
+from datetime import datetime, timedelta
+from typing import Dict
+
+import requests
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from playwright.async_api import async_playwright
 from playwright.sync_api import sync_playwright
+from dotenv import load_dotenv
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict
-import json
-from datetime import datetime, timedelta
 
 # --- FastAPI App Initialization ---
 app = FastAPI()
@@ -31,9 +35,12 @@ app.add_middleware(
 
 # --- AI Configuration ---
 # Make sure to set your API_KEY as an environment variable
-api_key = os.environ.get("GEMINI_API_KEY", "AIzaSyDXUF9WP3SpIduObNCEXJD4MQ44iSxbo4E")
+# Load variables from .env so deployments don't need to export manually
+load_dotenv()
+
+api_key = os.environ.get("GEMINI_API_KEY")
 if not api_key:
-    raise ValueError("API_KEY environment variable not set.")
+    raise ValueError("GEMINI_API_KEY environment variable not set.")
 
 genai.configure(api_key=api_key)
 
@@ -54,6 +61,83 @@ if model is None:
     raise ValueError("Could not initialize any Gemini model. Please check your API key and model availability.")
 
 # --- Web Scraping Logic ---
+def _extract_videos_from_initial_data(initial_data: dict, limit: int = 5) -> list[dict]:
+    """Recursively find videoRenderer objects in YouTube initial data."""
+    videos: list[dict] = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            if "videoRenderer" in node:
+                vr = node["videoRenderer"]
+                title_runs = vr.get("title", {}).get("runs", [{}])
+                title = title_runs[0].get("text", "No Title")
+                video_id = vr.get("videoId", "")
+                url = f"https://www.youtube.com/watch?v={video_id}" if video_id else "#"
+
+                owner_runs = (
+                    vr.get("ownerText", {}).get("runs")
+                    or vr.get("longBylineText", {}).get("runs")
+                    or [{}]
+                )
+                channel_name = owner_runs[0].get("text", "No Channel Name")
+
+                views_runs = vr.get("viewCountText", {}).get("runs") or [{}]
+                views = views_runs[0].get("text", "No Views")
+
+                publish_runs = vr.get("publishedTimeText", {}).get("runs") or [{}]
+                publish_date = publish_runs[0].get("text", "No Date")
+
+                videos.append(
+                    {
+                        "title": title,
+                        "url": url,
+                        "channelName": channel_name,
+                        "views": views,
+                        "publishDate": publish_date,
+                    }
+                )
+
+                return  # Do not recurse inside a videoRenderer to avoid duplicates
+
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(initial_data)
+    return videos[:limit]
+
+
+def scrape_youtube_videos_http(keyword: str) -> list[dict]:
+    """Fallback scraper using HTTP (no browser)."""
+    search_query = keyword.replace(" ", "+")
+    url = f"https://www.youtube.com/results?search_query={search_query}&hl=en"
+
+    headers = {
+        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+    }
+
+    resp = requests.get(url, headers=headers, timeout=15)
+    if not resp.ok:
+        raise RuntimeError(f"HTTP fetch failed with status {resp.status_code}")
+
+    match = re.search(r"ytInitialData\"?\s*=\s*(\{.*?\})\s*;", resp.text, re.DOTALL)
+    if not match:
+        raise RuntimeError("ytInitialData not found in response")
+
+    initial_data = json.loads(match.group(1))
+    videos = _extract_videos_from_initial_data(initial_data)
+    if not videos:
+        raise RuntimeError("No videos parsed from ytInitialData")
+    return videos
+
+
 async def scrape_youtube_videos(keyword: str):
     try:
         async with async_playwright() as p:
@@ -127,23 +211,35 @@ async def scrape_youtube_videos(keyword: str):
                     continue
 
             print(f"All browser configurations failed. Last error: {last_error}")
-            return [{
-                "title": "Could not fetch videos",
-                "url": "#",
-                "channelName": "Error",
-                "views": "N/A",
-                "publishDate": "N/A"
-            }]
+            try:
+                return scrape_youtube_videos_http(keyword)
+            except Exception as http_error:
+                print(f"HTTP fallback scraping failed: {http_error}")
+                return [{
+                    "title": "Could not fetch videos",
+                    "url": "#",
+                    "channelName": "Error",
+                    "views": "N/A",
+                    "publishDate": "N/A"
+                }]
                 
     except Exception as e:
         print(f"Browser launch error: {e}")
-        return [{
-            "title": "Could not fetch videos",
-            "url": "#",
-            "channelName": "Error",
-            "views": "N/A",
-            "publishDate": "N/A"
-        }]
+        try:
+            return scrape_youtube_videos_http(keyword)
+        except Exception as http_error:
+            print(f"HTTP fallback scraping failed: {http_error}")
+            try:
+                return scrape_youtube_videos_http(keyword)
+            except Exception as http_error:
+                print(f"HTTP fallback scraping failed: {http_error}")
+                return [{
+                    "title": "Could not fetch videos",
+                    "url": "#",
+                    "channelName": "Error",
+                    "views": "N/A",
+                    "publishDate": "N/A"
+                }]
 
 def scrape_youtube_videos_sync(keyword: str):
     try:
@@ -211,13 +307,17 @@ def scrape_youtube_videos_sync(keyword: str):
             }]
     except Exception as e:
         print(f"Browser launch error: {e}")
-        return [{
-            "title": "Could not fetch videos",
-            "url": "#",
-            "channelName": "Error",
-            "views": "N/A",
-            "publishDate": "N/A"
-        }]
+        try:
+            return scrape_youtube_videos_http(keyword)
+        except Exception as http_error:
+            print(f"HTTP fallback scraping failed: {http_error}")
+            return [{
+                "title": "Could not fetch videos",
+                "url": "#",
+                "channelName": "Error",
+                "views": "N/A",
+                "publishDate": "N/A"
+            }]
 
 # --- AI Analysis Logic ---
 async def get_seo_analysis(keyword: str):

@@ -36,15 +36,16 @@ npm run dev
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+python -m playwright install
 python run_backend.py
 ```
 
 ### Environment Variables
 
-Create `.env.local` with:
+Copy `.env.example` to `.env` and set your Gemini key:
 
 ```
-GEMINI_API_KEY=your_api_key_here
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 ## Usage
